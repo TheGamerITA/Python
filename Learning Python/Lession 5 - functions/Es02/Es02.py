@@ -1,4 +1,4 @@
 def doppio(x):
     return x * 2
 
-print("Il doppio del numero e': ",doppio(int(input("Inserisci un numero: "))))
+print("Double the number is: ",doppio(int(input("Enter a number: "))))

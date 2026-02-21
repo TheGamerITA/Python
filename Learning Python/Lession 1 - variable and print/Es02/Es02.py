@@ -1,3 +1,3 @@
-a = int(input("Inserisci il primo numero:"))
-b = int(input("Inserisci il secondo numero:"))
-print("La somma e':", a+b)
+a = int(input("Enter first number:"))
+b = int(input("Enter second number:"))
+print("The sum is:", a+b)

@@ -1,11 +1,11 @@
-numeri = []
+numbers = []
 for i in range(5):
-    numeri.append(int(input("Inserisci un numero: ")))
+    numbers.append(int(input("Enter a number: ")))
 
 somma = 0
-for i in range(len(numeri)):
-    print(numeri[i])
-    somma = somma + numeri[i]
+for i in range(len(numbers)):
+    print(numbers[i])
+    somma = somma + numbers[i]
 
-print("La somma dei numeri è: ", somma)
-print("La media dei numeri è: ", somma/len(numeri))
+print("The sum of the numbers is: ", somma)
+print("the average of the numbers is: ", somma/len(numbers))

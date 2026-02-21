@@ -1,4 +1,4 @@
-Password = input("Inserisci la password:")
+Password = input("Enter the password:")
 while Password != "1234":
-    Password = input("Inserisci la password:")
-print("Accesso consentito")
+    Password = input("Enter the password:")
+print("Access allowed")

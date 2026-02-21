@@ -1,9 +1,9 @@
-def media_lista(lista):
+def average_list(lista):
     sum(lista)
     len(lista)
     return sum(lista)/len(lista)
 
 lista = []
 for i in range(5):
-    lista.append(int(input("Inserisci un numero: ")))
-print("La media della lista e': ",media_lista(lista))
+    lista.append(int(input("Enter a number: ")))
+print("The average of the list is: ",average_list(lista))

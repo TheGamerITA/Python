@@ -1,5 +1,5 @@
-a = int(input("Inserisci la password numerica: "))
+a = int(input("Enter the numeric password: "))
 if a == 1234:
-    print("Accesso consentito")
+    print("Access allowed")
 else:
-    print("Accesso negato")
+    print("Access denied")

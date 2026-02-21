@@ -1,5 +1,5 @@
-a = int(input("Inserisci un numero:"))
+a = int(input("Enter a number:"))
 if a %2 == 0:
-    print("Numero pari")
+    print("Even number")
 else:
-    print("Numero dispari")
+    print("Odd number")

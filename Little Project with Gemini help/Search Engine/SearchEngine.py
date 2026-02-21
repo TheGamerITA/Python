@@ -48,7 +48,7 @@ def save_to_history(topic, filepath):
         "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "path": filepath
     }
-    # Evita duplicati identici recenti
+    # Avoid identical recent duplicates
     if history and history[0]['topic'] == topic and history[0]['path'] == filepath:
         return
     history.insert(0, entry) # Aggiungi in cima
@@ -81,13 +81,13 @@ def smart_scrape(url):
         paragraphs = soup.find_all('p')
         text = " ".join([p.get_text() for p in paragraphs[:3]])
         if len(text) > 400: text = text[:400] + "..."
-        return text.strip() or "Nessun contenuto testuale rilevato."
+        return text.strip() or "No textual content found."
     except:
-        return "Accesso al sito non riuscito."
+        return "Site access failed."
 
 def create_chart(text_data, topic):
     try:
-        # Trova parole > 4 lettere
+        # Find words > 4 letters
         words = re.findall(r'\b\w{5,}\b', text_data.lower())
         ignore = {'anche', 'della', 'delle', 'nella', 'hanno', 'stato', 'sono', 'come', 'questo', 'questa', 'degli', 'parte', 'prima', 'dopo', 'tutto', 'tutti', 'fatto', 'essere', 'avere', 'which', 'their', 'about', 'would', 'these', 'other', 'sur', 'pour', 'dans', 'avec', 'plus', 'not', 'that', 'with', 'from', 'this', 'have'}
         filtered = [w for w in words if w not in ignore]
@@ -99,7 +99,7 @@ def create_chart(text_data, topic):
         
         plt.figure(figsize=(6, 4))
         plt.bar(labels, values, color='#213363')
-        plt.title(f"Parole Chiave: {topic}")
+        plt.title(f"Keywords: {topic}")
         plt.xticks(rotation=45)
         plt.tight_layout()
         
@@ -115,24 +115,24 @@ def generate_docx(topic, wiki_summary, web_results, img_file, chart_file, save_p
     doc = Document()
     doc.add_heading(f'Report: {topic}', 0)
     
-    doc.add_paragraph(f"Generato il: {datetime.date.today()}")
+    doc.add_paragraph(f"Generated on: {datetime.date.today()}")
 
     if img_file:
         try:
             doc.add_picture(img_file, width=Inches(4))
         except: pass
 
-    doc.add_heading('Panoramica Generale', level=1)
+    doc.add_heading('General Overview', level=1)
     doc.add_paragraph(wiki_summary)
 
     if chart_file:
-        doc.add_heading('Analisi Dati', level=1)
+        doc.add_heading('Data Analysis', level=1)
         try:
             doc.add_picture(chart_file, width=Inches(5))
         except: pass
 
     if web_results:
-        doc.add_heading('Risorse Web', level=1)
+        doc.add_heading('Web Resources', level=1)
         for res in web_results:
             p = doc.add_paragraph()
             runner = p.add_run(res['title'])
@@ -160,9 +160,7 @@ class PDFReport(FPDF):
         self.set_y(-15)
         self.set_font('Arial', 'I', 8)
         self.set_text_color(128)
-        self.cell(0, 10, f'Pagina {self.page_no()}', 0, 0, 'C')
-
-    def create_cover_page(self):
+        self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
         self.add_page()
         self.set_y(40)
         self.set_font('Arial', 'B', 24)
@@ -210,8 +208,8 @@ class PDFReport(FPDF):
 def generate_report(topic, lang, depth, save_path, export_format):
     lang_map = {"Italiano": "it", "English": "en", "Français": "fr", "Español": "es", "Deutsch": "de"}
     code = lang_map.get(lang, "it")
-    sentences = 5 if depth == "Veloce" else (20 if depth == "Approfondita" else 10)
-    web_count = 1 if depth == "Veloce" else (5 if depth == "Approfondita" else 3)
+    sentences = 5 if depth == "Fast" else (20 if depth == "In-depth" else 10)
+    web_count = 1 if depth == "Fast" else (5 if depth == "In-depth" else 3)
     
     print(f"Working on {topic} ({export_format})...")
     
@@ -229,26 +227,26 @@ def generate_report(topic, lang, depth, save_path, export_format):
         with DDGS() as ddgs:
             raw = list(ddgs.text(topic, max_results=web_count))
             for r in raw:
-                body = smart_scrape(r['href']) if depth != "Veloce" else r['body']
+                body = smart_scrape(r['href']) if depth != "Fast" else r['body']
                 web_results.append({'title': r['title'], 'body': body, 'href': r['href']})
                 full_text += " " + body
     except: pass
 
-    chart_file = create_chart(full_text, topic) if depth != "Veloce" else None
+    chart_file = create_chart(full_text, topic) if depth != "Fast" else None
 
     # Export
     if "PDF" in export_format:
         pdf = PDFReport(topic, img_file)
         pdf.create_cover_page()
-        pdf.add_section_title(f"Panoramica ({lang})")
+        pdf.add_section_title(f"Overview ({lang})")
         pdf.add_paragraph(wiki_summary)
         pdf.ln()
         if chart_file:
-            pdf.add_section_title("Analisi Semantica")
+            pdf.add_section_title("Semantic Analysis")
             pdf.image(chart_file, x=50, w=110)
             pdf.ln(10)
         if web_results:
-            pdf.add_section_title("Risorse Web")
+            pdf.add_section_title("Web Resources")
             for res in web_results:
                 pdf.add_web_card(res['title'], res['body'], res['href'])
         pdf.output(save_path)
@@ -275,95 +273,95 @@ class UltimateApp(ctk.CTk):
         # Tabs
         self.tabview = ctk.CTkTabview(self, width=780, height=600)
         self.tabview.pack(pady=10)
-        self.tabview.add("Ricerca")
-        self.tabview.add("Cronologia")
-        self.tabview.add("Impostazioni")
+        self.tabview.add("Search")
+        self.tabview.add("History")
+        self.tabview.add("Settings")
         
         self.setup_search_tab()
         self.setup_history_tab()
         self.setup_settings_tab()
 
     def setup_search_tab(self):
-        tab = self.tabview.tab("Ricerca")
+        tab = self.tabview.tab("Search")
         
         ctk.CTkLabel(tab, text="Research Station", font=("Arial", 28, "bold"), text_color="#4B8BBE").pack(pady=15)
         
-        self.entry = ctk.CTkEntry(tab, placeholder_text="Argomento...", width=500, height=45, font=("Arial", 14))
+        self.entry = ctk.CTkEntry(tab, placeholder_text="Topic...", width=500, height=45, font=("Arial", 14))
         self.entry.pack(pady=10)
 
         frame = ctk.CTkFrame(tab, fg_color="transparent")
         frame.pack(pady=5)
         
-        ctk.CTkLabel(frame, text="Lingua:").grid(row=0, column=0, padx=5)
+        ctk.CTkLabel(frame, text="Language:").grid(row=0, column=0, padx=5)
         self.opt_lang = ctk.CTkOptionMenu(frame, values=["Italiano", "English", "Français", "Deutsch"])
         self.opt_lang.grid(row=0, column=1, padx=10)
         
-        ctk.CTkLabel(frame, text="Profondità:").grid(row=0, column=2, padx=5)
-        self.seg_depth = ctk.CTkSegmentedButton(frame, values=["Veloce", "Normale", "Approfondita"])
-        self.seg_depth.set("Normale")
+        ctk.CTkLabel(frame, text="Depth:").grid(row=0, column=2, padx=5)
+        self.seg_depth = ctk.CTkSegmentedButton(frame, values=["Fast", "Normal", "In-depth"])
+        self.seg_depth.set("Normal")
         self.seg_depth.grid(row=0, column=3, padx=10)
 
-        ctk.CTkLabel(frame, text="Formato:").grid(row=1, column=0, padx=5, pady=10)
+        ctk.CTkLabel(frame, text="Format:").grid(row=1, column=0, padx=5, pady=10)
         self.opt_format = ctk.CTkOptionMenu(frame, values=["PDF", "Word (.docx)"])
         self.opt_format.grid(row=1, column=1, padx=10, pady=10)
 
-        self.btn_go = ctk.CTkButton(tab, text="AVVIA RICERCA", width=250, height=50, font=("Arial", 16, "bold"), command=self.ask_save)
+        self.btn_go = ctk.CTkButton(tab, text="START SEARCH", width=250, height=50, font=("Arial", 16, "bold"), command=self.ask_save)
         self.btn_go.pack(pady=20)
 
         self.progress = ctk.CTkProgressBar(tab, width=500, mode="indeterminate")
         self.progress.pack_forget()
-        self.status = ctk.CTkLabel(tab, text="Pronto.", text_color="gray")
+        self.status = ctk.CTkLabel(tab, text="Ready.", text_color="gray")
         self.status.pack(pady=5)
         
-        self.btn_open = ctk.CTkButton(tab, text="APRI FILE", fg_color="#E09F3E", state="disabled", command=self.open_current)
+        self.btn_open = ctk.CTkButton(tab, text="OPEN FILE", fg_color="#E09F3E", state="disabled", command=self.open_current)
         self.btn_open.pack_forget()
         self.saved_path = None
 
     def setup_history_tab(self):
-        tab = self.tabview.tab("Cronologia")
+        tab = self.tabview.tab("History")
         self.history_frame = ctk.CTkScrollableFrame(tab, width=700, height=450)
         self.history_frame.pack(pady=10)
         self.refresh_history()
         
-        ctk.CTkButton(tab, text="Aggiorna Lista", command=self.refresh_history).pack(pady=5)
+        ctk.CTkButton(tab, text="Refresh List", command=self.refresh_history).pack(pady=5)
 
     def refresh_history(self):
         for w in self.history_frame.winfo_children(): w.destroy()
         hist = load_history()
         if not hist:
-            ctk.CTkLabel(self.history_frame, text="Nessuna ricerca recente.").pack(pady=20)
+            ctk.CTkLabel(self.history_frame, text="No recent searches.").pack(pady=20)
             return
             
         for h in hist:
             f = ctk.CTkFrame(self.history_frame)
             f.pack(fill="x", pady=2, padx=5)
             ctk.CTkLabel(f, text=f"[{h['date']}] {h['topic']}", anchor="w", width=300).pack(side="left", padx=10)
-            ctk.CTkButton(f, text="Apri", width=80, command=lambda p=h['path']: self.safe_open(p)).pack(side="right", padx=10)
+            ctk.CTkButton(f, text="Open", width=80, command=lambda p=h['path']: self.safe_open(p)).pack(side="right", padx=10)
 
     def safe_open(self, path):
         if os.path.exists(path):
             os.startfile(path)
         else:
-            msgbox.showerror("Errore", "Il file non esiste più.")
+            msgbox.showerror("Error", "The file no longer exists.")
 
     def setup_settings_tab(self):
-        tab = self.tabview.tab("Impostazioni")
-        ctk.CTkLabel(tab, text="Tema Applicazione", font=("Arial", 18)).pack(pady=20)
+        tab = self.tabview.tab("Settings")
+        ctk.CTkLabel(tab, text="App Theme", font=("Arial", 18)).pack(pady=20)
         self.seg_theme = ctk.CTkSegmentedButton(tab, values=["Blue", "Green", "Dark-Blue"], command=self.change_theme)
         self.seg_theme.set("Blue")
         self.seg_theme.pack(pady=10)
-        ctk.CTkLabel(tab, text="(Richiede riavvio per applicarsi completamente a tutti gli elementi)", text_color="gray").pack()
+        ctk.CTkLabel(tab, text="(Requires restart to fully apply to all elements)", text_color="gray").pack()
 
     def change_theme(self, value):
         ctk.set_default_color_theme(value.lower())
-        msgbox.showinfo("Tema", f"Hai selezionato {value}. Riavviera l'app per vedere tutte le modifiche.")
+        msgbox.showinfo("Theme", f"You selected {value}. Restart the app to see all changes.")
 
     def ask_save(self):
         topic = self.entry.get().strip()
         fmt = self.opt_format.get()
         ext = ".pdf" if "PDF" in fmt else ".docx"
         
-        path = filedialog.asksaveasfilename(defaultextension=ext, title="Salva Report", initialfile=f"{topic}{ext}")
+        path = filedialog.asksaveasfilename(defaultextension=ext, title="Save Report", initialfile=f"{topic}{ext}")
         if path:
             self.toggle_ui(False)
             self.progress.pack()
@@ -382,7 +380,7 @@ class UltimateApp(ctk.CTk):
     def on_success(self):
         self.progress.stop()
         self.progress.pack_forget()
-        self.status.configure(text="Completato!", text_color="green")
+        self.status.configure(text="Completed!", text_color="green")
         self.btn_open.pack(pady=10)
         self.btn_open.configure(state="normal")
         self.toggle_ui(True)
@@ -391,7 +389,7 @@ class UltimateApp(ctk.CTk):
     def on_fail(self, err):
         self.progress.stop()
         self.progress.pack_forget()
-        self.status.configure(text=f"Errore: {err}", text_color="red")
+        self.status.configure(text=f"Error: {err}", text_color="red")
         self.toggle_ui(True)
         
     def toggle_ui(self, enable):

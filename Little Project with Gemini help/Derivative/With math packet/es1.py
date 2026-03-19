@@ -1,5 +1,3 @@
-# Derivata: f'(x) = ( f(x+h) - f(x) ) / h
-
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -8,21 +6,34 @@ def f(x):
 
 def derivata(x):
     h = 0.0001
-    return (f(x + h) - f(x)) / h
+    return (f(x + h) - f(x)) /h
 
-xs = np.linspace(-3, 3, 1000)
+valori_x = np.linspace(-3, 3, 1000)
 
-# Cerca massimi e minimi: dove f' cambia segno
-for i in range(1, len(xs) - 1):
-    if derivata(xs[i-1]) > 0 and derivata(xs[i+1]) < 0:
-        print(f"MASSIMO: x={xs[i]:.2f}  f(x)={f(xs[i]):.2f}")
-    if derivata(xs[i-1]) < 0 and derivata(xs[i+1]) > 0:
-        print(f"MINIMO:  x={xs[i]:.2f}  f(x)={f(xs[i]):.2f}")
+massimo_trovato = False
+minimo_trovato = False
 
-# Grafico
-plt.plot(xs, f(xs))
-plt.axhline(0, color='gray')
+for i in range(1, len(valori_x)-1):
+    x_prima = valori_x[i - 1]
+    x_dopo = valori_x[i + 1]
+    x_corrente = valori_x[i]
+    
+    derivata_prima = derivata(x_prima)
+    derivata_seconda = derivata(x_dopo)
+    
+    if derivata_prima > 0 and derivata_seconda < 0 and not massimo_trovato:
+        print("Massimale trovato:")
+        print("x = ", round(x_corrente, 2))
+        print("f(x) = ", round(f(x_corrente), 2))
+        massimo_trovato = True
+    
+    if derivata_prima < 0 and derivata_seconda > 0 and not minimo_trovato:
+        print("Minimo trovato:")
+        print("x = ", round(x_corrente, 2))
+        print("f(x) = ", round(f(x_corrente), 2))
+        minimo_trovato = True
+
+plt.plot(valori_x, f(valori_x))
 plt.grid(True)
-plt.title("f(x) = x³ - 3x")
-plt.savefig("derivata_min.png", dpi=150)
+plt.title("Grafico di: f(x) = x^3 - 3x")
 plt.show()

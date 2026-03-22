@@ -8,8 +8,15 @@ def derivata(x):
     h = 0.0001
     return (f(x + h) - f(x)) /h
 
-valori_x = np.linspace(-3, 3, 1000)
 
+x0 = int(input("Inserisci il punto per calcolare la derivata: "))
+print("Calcolo derivata f'(x) nel punto: ", x0)
+print("f'(x) = ", round(derivata(x0), 4))
+print()
+
+
+
+valori_x = np.linspace(-3, 3, 1000)
 massimo_trovato = False
 minimo_trovato = False
 

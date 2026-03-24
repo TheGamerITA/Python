@@ -16,7 +16,7 @@ print()
 
 
 
-valori_x = np.linspace(-3, 3, 1000)
+valori_x = np.linspace(-3, 3, 100)
 massimo_trovato = False
 minimo_trovato = False
 

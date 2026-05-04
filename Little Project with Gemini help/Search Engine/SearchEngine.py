@@ -7,6 +7,8 @@ from bs4 import BeautifulSoup
 import os
 import platform
 import subprocess
+import tempfile
+import logging
 from PIL import Image
 import customtkinter as ctk
 import threading
@@ -38,6 +40,9 @@ HTTP_ADAPTER = HTTPAdapter(max_retries=HTTP_RETRY_STRATEGY)
 HTTP_SESSION.mount("http://", HTTP_ADAPTER)
 HTTP_SESSION.mount("https://", HTTP_ADAPTER)
 
+logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
+logger = logging.getLogger(__name__)
+
 def clean_text(text):
     if not text: return ""
     replacements = {
@@ -53,7 +58,7 @@ def clean_text(text):
 def load_history():
     if os.path.exists(HISTORY_FILE):
         try:
-            with open(HISTORY_FILE, "r") as f:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except (OSError, json.JSONDecodeError):
             return []
@@ -72,7 +77,7 @@ def save_to_history(topic, filepath):
     history.insert(0, entry) # Aggiungi in cima
     if len(history) > 20: history = history[:20] # Mantieni solo gli ultimi 20
     
-    with open(HISTORY_FILE, "w") as f:
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(history, f, indent=4)
 
 def download_image(topic):
@@ -88,12 +93,13 @@ def download_image(topic):
                         headers={"User-Agent": HTTP_USER_AGENT},
                     )
                     if response.status_code == 200:
-                        filename = f"temp_{topic.replace(' ', '')}.jpg"
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg", prefix="temp_img_") as tmp:
+                            filename = tmp.name
                         with open(filename, 'wb') as f:
                             f.write(response.content)
                         return filename
     except (wikipedia.exceptions.WikipediaException, requests.RequestException) as exc:
-        print(f"[download_image][fallback] topic={topic} reason={type(exc).__name__}: {exc}")
+        logger.warning("download_image fallback for %s: %s", topic, exc)
     return None
 
 def smart_scrape(url):
@@ -109,7 +115,7 @@ def smart_scrape(url):
         if len(text) > 400: text = text[:400] + "..."
         return text.strip() or "No textual content found."
     except requests.RequestException as exc:
-        print(f"[smart_scrape][fallback] url={url} reason={type(exc).__name__}: {exc}")
+        logger.warning("smart_scrape fallback for %s: %s", url, exc)
         return "Site access failed."
 
 def create_chart(text_data, topic):
@@ -134,7 +140,8 @@ def create_chart(text_data, topic):
         plt.savefig(filename)
         plt.close()
         return filename
-    except Exception:
+    except Exception as exc:
+        logger.warning("create_chart failed: %s", exc)
         return None
 
 # --- EXPORT LOGIC ---
@@ -244,7 +251,7 @@ def generate_report(topic, lang, depth, save_path, export_format):
     img_file = None
     chart_file = None
     
-    print(f"Working on {topic} ({export_format})...")
+    logger.info("Working on %s (%s)...", topic, export_format)
     
     try:
         wikipedia.set_lang(code)
@@ -263,8 +270,8 @@ def generate_report(topic, lang, depth, save_path, export_format):
                 body = smart_scrape(r['href']) if depth != "Fast" else r['body']
                 web_results.append({'title': r['title'], 'body': body, 'href': r['href']})
                 full_text += " " + body
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("DDGS search failed for %s: %s", topic, exc)
 
     try:
         chart_file = create_chart(full_text, topic) if depth != "Fast" else None
@@ -328,7 +335,7 @@ class UltimateApp(ctk.CTk):
         frame.pack(pady=5)
         
         ctk.CTkLabel(frame, text="Language:").grid(row=0, column=0, padx=5)
-        self.opt_lang = ctk.CTkOptionMenu(frame, values=["Italiano", "English", "Français", "Deutsch"])
+        self.opt_lang = ctk.CTkOptionMenu(frame, values=["Italiano", "English", "Français", "Español", "Deutsch"])
         self.opt_lang.grid(row=0, column=1, padx=10)
         
         ctk.CTkLabel(frame, text="Depth:").grid(row=0, column=2, padx=5)
@@ -408,10 +415,11 @@ class UltimateApp(ctk.CTk):
         fmt = self.opt_format.get()
         ext = ".pdf" if "PDF" in fmt else ".docx"
         
-        path = filedialog.asksaveasfilename(defaultextension=ext, title="Save Report", initialfile=f"{topic}{ext}")
         if not topic:
             msgbox.showwarning("Missing topic", "Please enter a topic before starting the search.")
             return
+        
+        path = filedialog.asksaveasfilename(defaultextension=ext, title="Save Report", initialfile=f"{topic}{ext}")
 
         if path:
             self.toggle_ui(False)
@@ -425,7 +433,7 @@ class UltimateApp(ctk.CTk):
             self.saved_path = path
             self.after(0, self.on_success)
         except Exception as e:
-            print(e)
+            logger.exception("Report generation failed")
             self.after(0, lambda: self.on_fail(str(e)))
 
     def on_success(self):

@@ -381,10 +381,10 @@ class UltimateApp(ctk.CTk):
         try:
             generate_report(topic, lang, depth, path, fmt)
             self.saved_path = path
-            self.on_success()
+            self.after(0, self.on_success)
         except Exception as e:
             print(e)
-            self.on_fail(str(e))
+            self.after(0, lambda: self.on_fail(str(e)))
 
     def on_success(self):
         self.progress.stop()

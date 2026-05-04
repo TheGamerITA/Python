@@ -16,9 +16,25 @@ import re
 import json
 from docx import Document
 from docx.shared import Inches
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # --- CONFIG & UTILS ---
 HISTORY_FILE = "search_history.json"
+HTTP_TIMEOUT = (3, 6)  # (connect timeout, read timeout)
+HTTP_MAX_RETRIES = 3
+HTTP_USER_AGENT = "ResearchStation/1.0 (+https://localhost)"
+
+HTTP_SESSION = requests.Session()
+HTTP_RETRY_STRATEGY = Retry(
+    total=HTTP_MAX_RETRIES,
+    backoff_factor=0.5,
+    status_forcelist=[429, 500, 502, 503, 504],
+    allowed_methods=frozenset(["GET"]),
+)
+HTTP_ADAPTER = HTTPAdapter(max_retries=HTTP_RETRY_STRATEGY)
+HTTP_SESSION.mount("http://", HTTP_ADAPTER)
+HTTP_SESSION.mount("https://", HTTP_ADAPTER)
 
 def clean_text(text):
     if not text: return ""
@@ -63,26 +79,35 @@ def download_image(topic):
         if page.images:
             for img_url in page.images[:5]:
                 if img_url.lower().endswith(('.jpg', '.png', '.jpeg')):
-                    response = requests.get(img_url, stream=True, timeout=5)
+                    response = HTTP_SESSION.get(
+                        img_url,
+                        stream=True,
+                        timeout=HTTP_TIMEOUT,
+                        headers={"User-Agent": HTTP_USER_AGENT},
+                    )
                     if response.status_code == 200:
                         filename = f"temp_{topic.replace(' ', '')}.jpg"
                         with open(filename, 'wb') as f:
                             f.write(response.content)
                         return filename
-    except (wikipedia.exceptions.WikipediaException, requests.RequestException):
-        pass
+    except (wikipedia.exceptions.WikipediaException, requests.RequestException) as exc:
+        print(f"[download_image][fallback] topic={topic} reason={type(exc).__name__}: {exc}")
     return None
 
 def smart_scrape(url):
     try:
-        headers = {'User-Agent': "Mozilla/5.0"}
-        response = requests.get(url, headers=headers, timeout=4)
+        response = HTTP_SESSION.get(
+            url,
+            headers={"User-Agent": HTTP_USER_AGENT},
+            timeout=HTTP_TIMEOUT,
+        )
         soup = BeautifulSoup(response.content, 'html.parser')
         paragraphs = soup.find_all('p')
         text = " ".join([p.get_text() for p in paragraphs[:3]])
         if len(text) > 400: text = text[:400] + "..."
         return text.strip() or "No textual content found."
-    except requests.RequestException:
+    except requests.RequestException as exc:
+        print(f"[smart_scrape][fallback] url={url} reason={type(exc).__name__}: {exc}")
         return "Site access failed."
 
 def create_chart(text_data, topic):

@@ -5,6 +5,8 @@ import datetime
 import requests
 from bs4 import BeautifulSoup
 import os
+import platform
+import subprocess
 from PIL import Image
 import customtkinter as ctk
 import threading
@@ -343,9 +345,21 @@ class UltimateApp(ctk.CTk):
             ctk.CTkLabel(f, text=f"[{h['date']}] {h['topic']}", anchor="w", width=300).pack(side="left", padx=10)
             ctk.CTkButton(f, text="Open", width=80, command=lambda p=h['path']: self.safe_open(p)).pack(side="right", padx=10)
 
+    def open_file(self, path):
+        try:
+            system = platform.system()
+            if system == "Windows":
+                os.startfile(path)
+            elif system == "Darwin":
+                subprocess.run(["open", path], check=False)
+            else:
+                subprocess.run(["xdg-open", path], check=False)
+        except Exception as e:
+            msgbox.showerror("Error", f"Unable to open file: {e}")
+
     def safe_open(self, path):
         if os.path.exists(path):
-            os.startfile(path)
+            self.open_file(path)
         else:
             msgbox.showerror("Error", "The file no longer exists.")
 
@@ -406,7 +420,8 @@ class UltimateApp(ctk.CTk):
         self.btn_go.configure(state=state)
         
     def open_current(self):
-        if self.saved_path: os.startfile(self.saved_path)
+        if self.saved_path:
+            self.open_file(self.saved_path)
 
 if __name__ == "__main__":
     app = UltimateApp()

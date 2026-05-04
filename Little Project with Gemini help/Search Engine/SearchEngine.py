@@ -214,6 +214,8 @@ def generate_report(topic, lang, depth, save_path, export_format):
     code = lang_map.get(lang, "it")
     sentences = 5 if depth == "Fast" else (20 if depth == "In-depth" else 10)
     web_count = 1 if depth == "Fast" else (5 if depth == "In-depth" else 3)
+    img_file = None
+    chart_file = None
     
     print(f"Working on {topic} ({export_format})...")
     
@@ -237,33 +239,34 @@ def generate_report(topic, lang, depth, save_path, export_format):
     except Exception:
         pass
 
-    chart_file = create_chart(full_text, topic) if depth != "Fast" else None
+    try:
+        chart_file = create_chart(full_text, topic) if depth != "Fast" else None
 
-    # Export
-    if "PDF" in export_format:
-        pdf = PDFReport(topic, img_file)
-        pdf.create_cover_page()
-        pdf.add_section_title(f"Overview ({lang})")
-        pdf.add_paragraph(wiki_summary)
-        pdf.ln()
-        if chart_file:
-            pdf.add_section_title("Semantic Analysis")
-            pdf.image(chart_file, x=50, w=110)
-            pdf.ln(10)
-        if web_results:
-            pdf.add_section_title("Web Resources")
-            for res in web_results:
-                pdf.add_web_card(res['title'], res['body'], res['href'])
-        pdf.output(save_path)
-    
-    elif "Word" in export_format:
-        generate_docx(topic, wiki_summary, web_results, img_file, chart_file, save_path)
+        # Export
+        if "PDF" in export_format:
+            pdf = PDFReport(topic, img_file)
+            pdf.create_cover_page()
+            pdf.add_section_title(f"Overview ({lang})")
+            pdf.add_paragraph(wiki_summary)
+            pdf.ln()
+            if chart_file:
+                pdf.add_section_title("Semantic Analysis")
+                pdf.image(chart_file, x=50, w=110)
+                pdf.ln(10)
+            if web_results:
+                pdf.add_section_title("Web Resources")
+                for res in web_results:
+                    pdf.add_web_card(res['title'], res['body'], res['href'])
+            pdf.output(save_path)
+        
+        elif "Word" in export_format:
+            generate_docx(topic, wiki_summary, web_results, img_file, chart_file, save_path)
 
-    # Cleanup & History
-    if img_file and os.path.exists(img_file): os.remove(img_file)
-    if chart_file and os.path.exists(chart_file): os.remove(chart_file)
-    
-    save_to_history(topic, save_path)
+        save_to_history(topic, save_path)
+    finally:
+        if img_file and os.path.exists(img_file): os.remove(img_file)
+        if chart_file and os.path.exists(chart_file): os.remove(chart_file)
+
     return save_path
 
 # --- GUI ---

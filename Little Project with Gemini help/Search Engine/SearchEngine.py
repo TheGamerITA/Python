@@ -37,7 +37,7 @@ def load_history():
         try:
             with open(HISTORY_FILE, "r") as f:
                 return json.load(f)
-        except:
+        except (OSError, json.JSONDecodeError):
             return []
     return []
 
@@ -69,7 +69,7 @@ def download_image(topic):
                         with open(filename, 'wb') as f:
                             f.write(response.content)
                         return filename
-    except:
+    except (wikipedia.exceptions.WikipediaException, requests.RequestException):
         pass
     return None
 
@@ -82,7 +82,7 @@ def smart_scrape(url):
         text = " ".join([p.get_text() for p in paragraphs[:3]])
         if len(text) > 400: text = text[:400] + "..."
         return text.strip() or "No textual content found."
-    except:
+    except requests.RequestException:
         return "Site access failed."
 
 def create_chart(text_data, topic):
@@ -120,7 +120,8 @@ def generate_docx(topic, wiki_summary, web_results, img_file, chart_file, save_p
     if img_file:
         try:
             doc.add_picture(img_file, width=Inches(4))
-        except: pass
+        except Exception:
+            pass
 
     doc.add_heading('General Overview', level=1)
     doc.add_paragraph(wiki_summary)
@@ -129,7 +130,8 @@ def generate_docx(topic, wiki_summary, web_results, img_file, chart_file, save_p
         doc.add_heading('Data Analysis', level=1)
         try:
             doc.add_picture(chart_file, width=Inches(5))
-        except: pass
+        except Exception:
+            pass
 
     if web_results:
         doc.add_heading('Web Resources', level=1)
@@ -161,17 +163,19 @@ class PDFReport(FPDF):
         self.set_font('Arial', 'I', 8)
         self.set_text_color(128)
         self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+
+    def create_cover_page(self):
         self.add_page()
         self.set_y(40)
         self.set_font('Arial', 'B', 24)
         self.set_text_color(33, 51, 99)
         self.cell(0, 20, "REPORT PREMIUM", ln=True, align='C')
-        
+
         if self.cover_image:
             try:
                 self.image(self.cover_image, x=65, y=70, w=80)
                 self.set_y(160)
-            except:
+            except Exception:
                 self.set_y(100)
         else:
             self.set_y(100)
@@ -217,7 +221,7 @@ def generate_report(topic, lang, depth, save_path, export_format):
         wikipedia.set_lang(code)
         wiki_summary = wikipedia.summary(topic, sentences=sentences)
         img_file = download_image(topic)
-    except:
+    except wikipedia.exceptions.WikipediaException:
         wiki_summary = "N/A"
         img_file = None
 
@@ -230,7 +234,8 @@ def generate_report(topic, lang, depth, save_path, export_format):
                 body = smart_scrape(r['href']) if depth != "Fast" else r['body']
                 web_results.append({'title': r['title'], 'body': body, 'href': r['href']})
                 full_text += " " + body
-    except: pass
+    except Exception:
+        pass
 
     chart_file = create_chart(full_text, topic) if depth != "Fast" else None
 
@@ -362,11 +367,15 @@ class UltimateApp(ctk.CTk):
         ext = ".pdf" if "PDF" in fmt else ".docx"
         
         path = filedialog.asksaveasfilename(defaultextension=ext, title="Save Report", initialfile=f"{topic}{ext}")
+        if not topic:
+            msgbox.showwarning("Missing topic", "Please enter a topic before starting the search.")
+            return
+
         if path:
             self.toggle_ui(False)
             self.progress.pack()
             self.progress.start()
-            threading.Thread(target=self.worker, args=(topic, self.opt_lang.get(), self.seg_depth.get(), path, fmt)).start()
+            threading.Thread(target=self.worker, args=(topic, self.opt_lang.get(), self.seg_depth.get(), path, fmt), daemon=True).start()
 
     def worker(self, topic, lang, depth, path, fmt):
         try:

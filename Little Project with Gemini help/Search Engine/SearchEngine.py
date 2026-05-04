@@ -1,1 +1,5 @@
-from main import *  # backward-compatible entrypoint
+from main import run
+
+
+if __name__ == "__main__":
+    run()

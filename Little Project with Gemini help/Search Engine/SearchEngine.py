@@ -5,6 +5,10 @@ import datetime
 import requests
 from bs4 import BeautifulSoup
 import os
+import platform
+import subprocess
+import tempfile
+import logging
 from PIL import Image
 import customtkinter as ctk
 import threading
@@ -16,9 +20,28 @@ import re
 import json
 from docx import Document
 from docx.shared import Inches
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # --- CONFIG & UTILS ---
 HISTORY_FILE = "search_history.json"
+HTTP_TIMEOUT = (3, 6)  # (connect timeout, read timeout)
+HTTP_MAX_RETRIES = 3
+HTTP_USER_AGENT = "ResearchStation/1.0 (+https://localhost)"
+
+HTTP_SESSION = requests.Session()
+HTTP_RETRY_STRATEGY = Retry(
+    total=HTTP_MAX_RETRIES,
+    backoff_factor=0.5,
+    status_forcelist=[429, 500, 502, 503, 504],
+    allowed_methods=frozenset(["GET"]),
+)
+HTTP_ADAPTER = HTTPAdapter(max_retries=HTTP_RETRY_STRATEGY)
+HTTP_SESSION.mount("http://", HTTP_ADAPTER)
+HTTP_SESSION.mount("https://", HTTP_ADAPTER)
+
+logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
+logger = logging.getLogger(__name__)
 
 def clean_text(text):
     if not text: return ""
@@ -35,9 +58,9 @@ def clean_text(text):
 def load_history():
     if os.path.exists(HISTORY_FILE):
         try:
-            with open(HISTORY_FILE, "r") as f:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except:
+        except (OSError, json.JSONDecodeError):
             return []
     return []
 
@@ -54,7 +77,7 @@ def save_to_history(topic, filepath):
     history.insert(0, entry) # Aggiungi in cima
     if len(history) > 20: history = history[:20] # Mantieni solo gli ultimi 20
     
-    with open(HISTORY_FILE, "w") as f:
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(history, f, indent=4)
 
 def download_image(topic):
@@ -63,26 +86,36 @@ def download_image(topic):
         if page.images:
             for img_url in page.images[:5]:
                 if img_url.lower().endswith(('.jpg', '.png', '.jpeg')):
-                    response = requests.get(img_url, stream=True, timeout=5)
+                    response = HTTP_SESSION.get(
+                        img_url,
+                        stream=True,
+                        timeout=HTTP_TIMEOUT,
+                        headers={"User-Agent": HTTP_USER_AGENT},
+                    )
                     if response.status_code == 200:
-                        filename = f"temp_{topic.replace(' ', '')}.jpg"
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg", prefix="temp_img_") as tmp:
+                            filename = tmp.name
                         with open(filename, 'wb') as f:
                             f.write(response.content)
                         return filename
-    except:
-        pass
+    except (wikipedia.exceptions.WikipediaException, requests.RequestException) as exc:
+        logger.warning("download_image fallback for %s: %s", topic, exc)
     return None
 
 def smart_scrape(url):
     try:
-        headers = {'User-Agent': "Mozilla/5.0"}
-        response = requests.get(url, headers=headers, timeout=4)
+        response = HTTP_SESSION.get(
+            url,
+            headers={"User-Agent": HTTP_USER_AGENT},
+            timeout=HTTP_TIMEOUT,
+        )
         soup = BeautifulSoup(response.content, 'html.parser')
         paragraphs = soup.find_all('p')
         text = " ".join([p.get_text() for p in paragraphs[:3]])
         if len(text) > 400: text = text[:400] + "..."
         return text.strip() or "No textual content found."
-    except:
+    except requests.RequestException as exc:
+        logger.warning("smart_scrape fallback for %s: %s", url, exc)
         return "Site access failed."
 
 def create_chart(text_data, topic):
@@ -107,7 +140,8 @@ def create_chart(text_data, topic):
         plt.savefig(filename)
         plt.close()
         return filename
-    except Exception:
+    except Exception as exc:
+        logger.warning("create_chart failed: %s", exc)
         return None
 
 # --- EXPORT LOGIC ---
@@ -120,7 +154,8 @@ def generate_docx(topic, wiki_summary, web_results, img_file, chart_file, save_p
     if img_file:
         try:
             doc.add_picture(img_file, width=Inches(4))
-        except: pass
+        except Exception:
+            pass
 
     doc.add_heading('General Overview', level=1)
     doc.add_paragraph(wiki_summary)
@@ -129,7 +164,8 @@ def generate_docx(topic, wiki_summary, web_results, img_file, chart_file, save_p
         doc.add_heading('Data Analysis', level=1)
         try:
             doc.add_picture(chart_file, width=Inches(5))
-        except: pass
+        except Exception:
+            pass
 
     if web_results:
         doc.add_heading('Web Resources', level=1)
@@ -161,17 +197,19 @@ class PDFReport(FPDF):
         self.set_font('Arial', 'I', 8)
         self.set_text_color(128)
         self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+
+    def create_cover_page(self):
         self.add_page()
         self.set_y(40)
         self.set_font('Arial', 'B', 24)
         self.set_text_color(33, 51, 99)
         self.cell(0, 20, "REPORT PREMIUM", ln=True, align='C')
-        
+
         if self.cover_image:
             try:
                 self.image(self.cover_image, x=65, y=70, w=80)
                 self.set_y(160)
-            except:
+            except Exception:
                 self.set_y(100)
         else:
             self.set_y(100)
@@ -210,14 +248,16 @@ def generate_report(topic, lang, depth, save_path, export_format):
     code = lang_map.get(lang, "it")
     sentences = 5 if depth == "Fast" else (20 if depth == "In-depth" else 10)
     web_count = 1 if depth == "Fast" else (5 if depth == "In-depth" else 3)
+    img_file = None
+    chart_file = None
     
-    print(f"Working on {topic} ({export_format})...")
+    logger.info("Working on %s (%s)...", topic, export_format)
     
     try:
         wikipedia.set_lang(code)
         wiki_summary = wikipedia.summary(topic, sentences=sentences)
         img_file = download_image(topic)
-    except:
+    except wikipedia.exceptions.WikipediaException:
         wiki_summary = "N/A"
         img_file = None
 
@@ -230,35 +270,37 @@ def generate_report(topic, lang, depth, save_path, export_format):
                 body = smart_scrape(r['href']) if depth != "Fast" else r['body']
                 web_results.append({'title': r['title'], 'body': body, 'href': r['href']})
                 full_text += " " + body
-    except: pass
+    except Exception as exc:
+        logger.warning("DDGS search failed for %s: %s", topic, exc)
 
-    chart_file = create_chart(full_text, topic) if depth != "Fast" else None
+    try:
+        chart_file = create_chart(full_text, topic) if depth != "Fast" else None
 
-    # Export
-    if "PDF" in export_format:
-        pdf = PDFReport(topic, img_file)
-        pdf.create_cover_page()
-        pdf.add_section_title(f"Overview ({lang})")
-        pdf.add_paragraph(wiki_summary)
-        pdf.ln()
-        if chart_file:
-            pdf.add_section_title("Semantic Analysis")
-            pdf.image(chart_file, x=50, w=110)
-            pdf.ln(10)
-        if web_results:
-            pdf.add_section_title("Web Resources")
-            for res in web_results:
-                pdf.add_web_card(res['title'], res['body'], res['href'])
-        pdf.output(save_path)
-    
-    elif "Word" in export_format:
-        generate_docx(topic, wiki_summary, web_results, img_file, chart_file, save_path)
+        # Export
+        if "PDF" in export_format:
+            pdf = PDFReport(topic, img_file)
+            pdf.create_cover_page()
+            pdf.add_section_title(f"Overview ({lang})")
+            pdf.add_paragraph(wiki_summary)
+            pdf.ln()
+            if chart_file:
+                pdf.add_section_title("Semantic Analysis")
+                pdf.image(chart_file, x=50, w=110)
+                pdf.ln(10)
+            if web_results:
+                pdf.add_section_title("Web Resources")
+                for res in web_results:
+                    pdf.add_web_card(res['title'], res['body'], res['href'])
+            pdf.output(save_path)
+        
+        elif "Word" in export_format:
+            generate_docx(topic, wiki_summary, web_results, img_file, chart_file, save_path)
 
-    # Cleanup & History
-    if img_file and os.path.exists(img_file): os.remove(img_file)
-    if chart_file and os.path.exists(chart_file): os.remove(chart_file)
-    
-    save_to_history(topic, save_path)
+        save_to_history(topic, save_path)
+    finally:
+        if img_file and os.path.exists(img_file): os.remove(img_file)
+        if chart_file and os.path.exists(chart_file): os.remove(chart_file)
+
     return save_path
 
 # --- GUI ---
@@ -293,7 +335,7 @@ class UltimateApp(ctk.CTk):
         frame.pack(pady=5)
         
         ctk.CTkLabel(frame, text="Language:").grid(row=0, column=0, padx=5)
-        self.opt_lang = ctk.CTkOptionMenu(frame, values=["Italiano", "English", "Français", "Deutsch"])
+        self.opt_lang = ctk.CTkOptionMenu(frame, values=["Italiano", "English", "Français", "Español", "Deutsch"])
         self.opt_lang.grid(row=0, column=1, padx=10)
         
         ctk.CTkLabel(frame, text="Depth:").grid(row=0, column=2, padx=5)
@@ -338,9 +380,21 @@ class UltimateApp(ctk.CTk):
             ctk.CTkLabel(f, text=f"[{h['date']}] {h['topic']}", anchor="w", width=300).pack(side="left", padx=10)
             ctk.CTkButton(f, text="Open", width=80, command=lambda p=h['path']: self.safe_open(p)).pack(side="right", padx=10)
 
+    def open_file(self, path):
+        try:
+            system = platform.system()
+            if system == "Windows":
+                os.startfile(path)
+            elif system == "Darwin":
+                subprocess.run(["open", path], check=False)
+            else:
+                subprocess.run(["xdg-open", path], check=False)
+        except Exception as e:
+            msgbox.showerror("Error", f"Unable to open file: {e}")
+
     def safe_open(self, path):
         if os.path.exists(path):
-            os.startfile(path)
+            self.open_file(path)
         else:
             msgbox.showerror("Error", "The file no longer exists.")
 
@@ -361,21 +415,26 @@ class UltimateApp(ctk.CTk):
         fmt = self.opt_format.get()
         ext = ".pdf" if "PDF" in fmt else ".docx"
         
+        if not topic:
+            msgbox.showwarning("Missing topic", "Please enter a topic before starting the search.")
+            return
+        
         path = filedialog.asksaveasfilename(defaultextension=ext, title="Save Report", initialfile=f"{topic}{ext}")
+
         if path:
             self.toggle_ui(False)
             self.progress.pack()
             self.progress.start()
-            threading.Thread(target=self.worker, args=(topic, self.opt_lang.get(), self.seg_depth.get(), path, fmt)).start()
+            threading.Thread(target=self.worker, args=(topic, self.opt_lang.get(), self.seg_depth.get(), path, fmt), daemon=True).start()
 
     def worker(self, topic, lang, depth, path, fmt):
         try:
             generate_report(topic, lang, depth, path, fmt)
             self.saved_path = path
-            self.on_success()
+            self.after(0, self.on_success)
         except Exception as e:
-            print(e)
-            self.on_fail(str(e))
+            logger.exception("Report generation failed")
+            self.after(0, lambda: self.on_fail(str(e)))
 
     def on_success(self):
         self.progress.stop()
@@ -397,7 +456,8 @@ class UltimateApp(ctk.CTk):
         self.btn_go.configure(state=state)
         
     def open_current(self):
-        if self.saved_path: os.startfile(self.saved_path)
+        if self.saved_path:
+            self.open_file(self.saved_path)
 
 if __name__ == "__main__":
     app = UltimateApp()
